@@ -91,10 +91,18 @@ jobs:
           invalid_executables=()
           for executable in "${executables[@]}"; do
             relative_path="${executable#./}"
-            found_path="./$relative_path"
+            candidate_paths=("./$relative_path" "./build/$relative_path")
+            found_path=""
 
-            if [ ! -f "$found_path" ]; then
-              invalid_executables+=("$executable (not found)")
+            for candidate_path in "${candidate_paths[@]}"; do
+              if [ -f "$candidate_path" ]; then
+                found_path="$candidate_path"
+                break
+              fi
+            done
+
+            if [ -z "$found_path" ]; then
+              invalid_executables+=("$executable (not found in ./ or ./build)")
               continue
             fi
 
@@ -166,10 +174,18 @@ jobs:
           invalid_executables=()
           for executable in "${executables[@]}"; do
             relative_path="${executable#./}"
-            found_path="./$relative_path"
+            candidate_paths=("./$relative_path" "./build/$relative_path")
+            found_path=""
 
-            if [ ! -f "$found_path" ]; then
-              invalid_executables+=("$executable (not found)")
+            for candidate_path in "${candidate_paths[@]}"; do
+              if [ -f "$candidate_path" ]; then
+                found_path="$candidate_path"
+                break
+              fi
+            done
+
+            if [ -z "$found_path" ]; then
+              invalid_executables+=("$executable (not found in ./ or ./build)")
               continue
             fi
 
