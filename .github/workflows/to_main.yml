@@ -1,7 +1,6 @@
 name: "Merge to main and push to EpiRepo"
 
-on:
-  workflow_dispatch:
+on: workflow_dispatch
 
 jobs:
   unit_tests:
