@@ -4,27 +4,67 @@ on:
   workflow_call:
 
 jobs:
+  detect_build_system:
+    name: "Detect build system"
+    runs-on: ubuntu-latest
+    container:
+      image: epitechcontent/epitest-docker:latest
+    outputs:
+      selected_build_system: ${{ steps.detect.outputs.selected_build_system }}
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Detect Make or CMake"
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          has_make=false
+          has_cmake=false
+
+          if [ -f "Makefile" ]; then
+            has_make=true
+          fi
+
+          if [ -f "CMakeLists.txt" ]; then
+            has_cmake=true
+          fi
+
+          if [ "$has_make" = false ] && [ "$has_cmake" = false ]; then
+            echo "No Makefile or CMakeLists.txt found"
+            exit 1
+          fi
+
+          # Prefer make when both build systems are present to keep runtime low.
+          if [ "$has_make" = true ]; then
+            selected_build_system="make"
+          else
+            selected_build_system="cmake"
+          fi
+
+          echo "selected_build_system=$selected_build_system" >> "$GITHUB_OUTPUT"
+          echo "Selected build system: $selected_build_system"
+
   make_tests:
     name: "Build and test with make"
+    needs: detect_build_system
+    if: ${{ needs.detect_build_system.outputs.selected_build_system == 'make' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 2
     container:
       image: epitechcontent/epitest-docker:latest
     steps:
       - name: "Checkout repository"
         uses: actions/checkout@v4
 
-      - name: "Build binaries"
+      - name: "Build with make"
+        timeout-minutes: 2
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ ! -f "Makefile" ]; then
-            echo "Makefile not found"
-            exit 1
-          fi
-
-          make all tests_runner
+          make
 
       - name: "Validate expected executables"
         shell: bash
@@ -75,7 +115,86 @@ jobs:
           fi
 
       - name: "Run make tests"
+        timeout-minutes: 2
         shell: bash
         run: |
           set -euo pipefail
           make run_tests
+
+  cmake_tests:
+    name: "Build and test with cmake"
+    needs: detect_build_system
+    if: ${{ needs.detect_build_system.outputs.selected_build_system == 'cmake' }}
+    runs-on: ubuntu-latest
+    container:
+      image: epitechcontent/epitest-docker:latest
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Build with CMake"
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cmake -S . -B build
+          cmake --build build
+
+      - name: "Validate expected executables"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_executables='${{ vars.EXECUTABLES }}'
+          if [ -z "${expected_executables//[[:space:],;]/}" ]; then
+            echo "vars.EXECUTABLES is empty or not defined"
+            exit 1
+          fi
+
+          mapfile -t executables < <(
+            printf '%s\n' "$expected_executables" \
+              | tr ',;' '\n\n' \
+              | tr ' ' '\n' \
+              | sed -E "s/^[[:space:]]+//; s/[[:space:]]+$//; s/^\"//; s/\"$//; s/^'//; s/'$//" \
+              | awk 'NF && !seen[$0]++'
+          )
+
+          if [ "${#executables[@]}" -eq 0 ]; then
+            echo "No valid executable names found in vars.EXECUTABLES"
+            exit 1
+          fi
+
+          invalid_executables=()
+          for executable in "${executables[@]}"; do
+            relative_path="${executable#./}"
+            found_path="./$relative_path"
+
+            if [ ! -f "$found_path" ]; then
+              invalid_executables+=("$executable (not found)")
+              continue
+            fi
+
+            if [ ! -x "$found_path" ]; then
+              invalid_executables+=("$executable (not executable: $found_path)")
+              continue
+            fi
+
+            echo "Validated executable: $executable -> $found_path"
+          done
+
+          if [ "${#invalid_executables[@]}" -gt 0 ]; then
+            echo "The following entries from vars.EXECUTABLES are invalid:"
+            printf ' - %s\n' "${invalid_executables[@]}"
+            exit 1
+          fi
+
+      - name: "Run CTest"
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build
+          cmake --build build --target all_tests
+          ctest --test-dir build --output-on-failure
+
