@@ -1,0 +1,81 @@
+name: "Unit tests"
+
+on:
+  workflow_call:
+
+jobs:
+  make_tests:
+    name: "Build and test with make"
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    container:
+      image: epitechcontent/epitest-docker:latest
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Build binaries"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "Makefile" ]; then
+            echo "Makefile not found"
+            exit 1
+          fi
+
+          make all tests_runner
+
+      - name: "Validate expected executables"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_executables='${{ vars.EXECUTABLES }}'
+          if [ -z "${expected_executables//[[:space:],;]/}" ]; then
+            echo "vars.EXECUTABLES is empty or not defined"
+            exit 1
+          fi
+
+          mapfile -t executables < <(
+            printf '%s\n' "$expected_executables" \
+              | tr ',;' '\n\n' \
+              | tr ' ' '\n' \
+              | sed -E "s/^[[:space:]]+//; s/[[:space:]]+$//; s/^\"//; s/\"$//; s/^'//; s/'$//" \
+              | awk 'NF && !seen[$0]++'
+          )
+
+          if [ "${#executables[@]}" -eq 0 ]; then
+            echo "No valid executable names found in vars.EXECUTABLES"
+            exit 1
+          fi
+
+          invalid_executables=()
+          for executable in "${executables[@]}"; do
+            relative_path="${executable#./}"
+            found_path="./$relative_path"
+
+            if [ ! -f "$found_path" ]; then
+              invalid_executables+=("$executable (not found)")
+              continue
+            fi
+
+            if [ ! -x "$found_path" ]; then
+              invalid_executables+=("$executable (not executable: $found_path)")
+              continue
+            fi
+
+            echo "Validated executable: $executable -> $found_path"
+          done
+
+          if [ "${#invalid_executables[@]}" -gt 0 ]; then
+            echo "The following entries from vars.EXECUTABLES are invalid:"
+            printf ' - %s\n' "${invalid_executables[@]}"
+            exit 1
+          fi
+
+      - name: "Run make tests"
+        shell: bash
+        run: |
+          set -euo pipefail
+          make run_tests

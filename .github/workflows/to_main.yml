@@ -1,0 +1,45 @@
+name: "Merge to main and push to EpiRepo"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  unit_tests:
+    name: "Execute unit tests"
+    uses: ./.github/workflows/run_tests.yml
+
+  merge_dev_to_main:
+    name: "Merge dev into main"
+    needs: unit_tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge dev into main
+        run: |
+          git fetch origin dev
+          git merge --no-ff --no-edit origin/dev
+          git push origin HEAD:main
+
+  mirror_repository:
+    name: "Mirror repository"
+    needs: merge_dev_to_main
+    runs-on: ubuntu-latest
+    if: ${{ vars.EPI_REPO_URL != '' && secrets.GIT_SSH_PRIVATE_KEY != '' && vars.EPI_REPO_URL != format('{0}/{1}', github.server_url, github.repository) && vars.EPI_REPO_URL != format('{0}/{1}.git', github.server_url, github.repository) }}
+    steps:
+      - name: Mirror to target repository
+        uses: pixta-dev/repository-mirroring-action@v1
+        with:
+          target_repo_url: ${{ vars.EPI_REPO_URL }}
+          ssh_private_key: ${{ secrets.GIT_SSH_PRIVATE_KEY }}
