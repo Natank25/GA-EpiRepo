@@ -16,7 +16,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout main branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
@@ -36,9 +36,12 @@ jobs:
     name: "Mirror repository"
     needs: merge_dev_to_main
     runs-on: ubuntu-latest
-    if: ${{ vars.EPI_REPO_URL != '' && secrets.GIT_SSH_PRIVATE_KEY != '' && vars.EPI_REPO_URL != format('{0}/{1}', github.server_url, github.repository) && vars.EPI_REPO_URL != format('{0}/{1}.git', github.server_url, github.repository) }}
+    if: ${{ vars.EPI_REPO_URL != '' && vars.EPI_REPO_URL != format('{0}/{1}', github.server_url, github.repository) && vars.EPI_REPO_URL != format('{0}/{1}.git', github.server_url, github.repository) }}
+    env:
+      MIRROR_SSH_KEY: ${{ secrets.GIT_SSH_PRIVATE_KEY }}
     steps:
       - name: Mirror to target repository
+        if: ${{ env.MIRROR_SSH_KEY != '' }}
         uses: pixta-dev/repository-mirroring-action@v1
         with:
           target_repo_url: ${{ vars.EPI_REPO_URL }}
