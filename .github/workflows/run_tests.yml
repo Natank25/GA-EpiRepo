@@ -7,8 +7,6 @@ jobs:
   detect_build_system:
     name: "Detect build system"
     runs-on: ubuntu-latest
-    container:
-      image: epitechcontent/epitest-docker:latest
     outputs:
       selected_build_system: ${{ steps.detect.outputs.selected_build_system }}
     steps:
